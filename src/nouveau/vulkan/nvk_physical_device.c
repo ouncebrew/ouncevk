@@ -1904,6 +1904,23 @@ nvk_physical_device_create(struct nvk_instance *instance,
       NATIVE_FEATURE(graphicsPipelineLibrary);
       NATIVE_EXTENSION(EXT_multi_draw);
       NATIVE_FEATURE(multiDraw);
+      /* The pipeline fragment shading rate: a fragment size of up to 4x4
+       * pixels as pipeline state or as dynamic state. NVK programs it with
+       * the variable pixel rate shading methods of the 3D class, which
+       * need no native service. The primitive and attachment rates stay
+       * off: no test exercises them on the console. Their limits read as
+       * the specification requires for a rate that is not supported.
+       */
+      NATIVE_EXTENSION(KHR_fragment_shading_rate);
+      NATIVE_FEATURE(pipelineFragmentShadingRate);
+      properties.minFragmentShadingRateAttachmentTexelSize =
+         (VkExtent2D) { 0, 0 };
+      properties.maxFragmentShadingRateAttachmentTexelSize =
+         (VkExtent2D) { 0, 0 };
+      properties.maxFragmentShadingRateAttachmentTexelSizeAspectRatio = 0;
+      properties.primitiveFragmentShadingRateWithMultipleViewports = false;
+      properties.layeredShadingRateAttachments = false;
+      properties.fragmentShadingRateNonTrivialCombinerOps = false;
       NATIVE_EXTENSION(EXT_conservative_rasterization);
       NATIVE_EXTENSION(EXT_sample_locations);
       NATIVE_EXTENSION(EXT_shader_module_identifier);
