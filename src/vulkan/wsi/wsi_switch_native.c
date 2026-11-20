@@ -72,21 +72,86 @@ struct native_chain {
    struct native_image images[NATIVE_IMAGE_COUNT];
 };
 
-/* The state of the default NWindow's surface. One per process: libounce-nx
- * gives only the default window a VI2 layer. */
+/* The state of the default NWindow's surface. */
 static struct wsi_native_vi_window native_default_window;
 
-/* The window of a VI surface on libounce-nx's default NWindow. Its extent
+/* The states of the surfaces of the other NWindows that have a VI2 layer:
+ * the windows of libounce-nx's nwindowCreateForDisplay, each on a display
+ * that the application names (a GameShare guest's display, for example). */
+#define NATIVE_DISPLAY_WINDOW_COUNT 4
+static struct wsi_native_vi_window native_display_windows[NATIVE_DISPLAY_WINDOW_COUNT];
+static simple_mtx_t native_display_windows_mutex = SIMPLE_MTX_INITIALIZER;
+
+/* The token of the VI2 layer of an NWindow other than the default one, or 0
+ * if the window has no layer now. Such a window has its layer from its
+ * creation to nwindowClose, so the call opens nothing. */
+static uint64_t
+native_display_window_token(NWindow *nw)
+{
+   Vi2Layer *layer = NULL;
+   if (!nwindowIsValid(nw) || R_FAILED(nwindowGetVi2Layer(nw, &layer)))
+      return 0;
+   return layer->token;
+}
+
+/* Whether no swapchain uses a state. */
+static bool
+native_display_state_idle(const struct wsi_native_vi_window *w)
+{
+   return !w->claimed && !w->handover_count;
+}
+
+/* The state of an NWindow, or NULL if the window has no VI2 layer or no
+ * state is free. A state serves its NWindow address until that window is
+ * closed and no swapchain uses the state. */
+static struct wsi_native_vi_window *
+native_window_state(NWindow *nw)
+{
+   if (nw == nwindowGetDefault())
+      return &native_default_window;
+   const uint64_t token = native_display_window_token(nw);
+   if (!token)
+      return NULL;
+
+   struct wsi_native_vi_window *state = NULL;
+   simple_mtx_lock(&native_display_windows_mutex);
+   for (unsigned i = 0; i < NATIVE_DISPLAY_WINDOW_COUNT && !state; i++) {
+      struct wsi_native_vi_window *w = &native_display_windows[i];
+      if (w->magic == WSI_NATIVE_VI_WINDOW_MAGIC && w->nwindow == nw)
+         state = w;
+   }
+   /* A new window with a new layer has the address of a closed one: a
+    * quarantined state of the earlier layer does not bind the new layer. */
+   if (state && state->retired && native_display_state_idle(state) &&
+       state->layer_token != token)
+      state->magic = 0;
+   for (unsigned i = 0; i < NATIVE_DISPLAY_WINDOW_COUNT && !state; i++) {
+      struct wsi_native_vi_window *w = &native_display_windows[i];
+      /* Free, or the state of a window that was closed. */
+      if (w->magic != WSI_NATIVE_VI_WINDOW_MAGIC ||
+          (native_display_state_idle(w) && !native_display_window_token(w->nwindow)))
+         state = w;
+   }
+   if (state && (state->magic != WSI_NATIVE_VI_WINDOW_MAGIC || state->nwindow != nw)) {
+      wsi_native_vi_window_init(state, 0, 0);
+      state->nwindow = nw;
+   }
+   simple_mtx_unlock(&native_display_windows_mutex);
+   return state;
+}
+
+/* The window of a VI surface on an NWindow with a VI2 layer. Its extent
  * follows nwindowGetDimensions until a swapchain claims it. */
 static struct wsi_native_vi_window *
 native_window(VkIcdSurfaceBase *base)
 {
    NWindow *nw = ((VkIcdSurfaceVi *)base)->window;
    u32 width = 0, height = 0;
-   if (!nw || nw != nwindowGetDefault() ||
-       R_FAILED(nwindowGetDimensions(nw, &width, &height)) || !width || !height)
+   if (!nw || R_FAILED(nwindowGetDimensions(nw, &width, &height)) || !width || !height)
       return NULL;
-   struct wsi_native_vi_window *w = &native_default_window;
+   struct wsi_native_vi_window *w = native_window_state(nw);
+   if (!w)
+      return NULL;
    if (w->magic != WSI_NATIVE_VI_WINDOW_MAGIC) {
       wsi_native_vi_window_init(w, width, height);
       w->nwindow = nw;
