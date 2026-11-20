@@ -5,10 +5,10 @@
 #include <stdint.h>
 
 /* OunceVK's state for the window of a VI surface. Applications pass the
- * default NWindow (nwindowGetDefault) to vkCreateViSurfaceNN, as on Switch 1.
- * The libounce-nx NWindow owns the VI2 layer of the process
- * (nwindowGetVi2Layer). The WSI (wsi_switch_native.c) keeps this state for
- * the window. */
+ * default NWindow (nwindowGetDefault) to vkCreateViSurfaceNN, as on Switch 1,
+ * or a window of libounce-nx's nwindowCreateForDisplay. The libounce-nx
+ * NWindow owns its VI2 layer (nwindowGetVi2Layer). The WSI
+ * (wsi_switch_native.c) keeps this state for each such window. */
 #define WSI_NATIVE_VI_WINDOW_MAGIC UINT64_C(0x4e58564b56493231)
 /* At most this many retired swapchains wait for their images to leave the
  * layer. With three images each and three for the current swapchain, the
